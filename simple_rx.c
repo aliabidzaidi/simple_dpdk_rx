@@ -15,6 +15,7 @@
 #define MBUF_CACHE 250
 #define BURST_SIZE 32
 
+static uint8_t nb_ports;
 static unsigned long packets_processed;
 static uint64_t timer_period = 2;
 static uint64_t timer_cycles;
@@ -102,7 +103,15 @@ int port_init(uint16_t port, struct rte_mempool *membuf_pool)
 
 void print_stats(void)
 {
+  struct rte_eth_stats st;
   printf("--------------------------------------------------------------\n");
+
+  for (int p = 0; p < nb_ports; ++p)
+  {
+    rte_eth_stats_get(p, &st);
+    printf("Port #%u: %lu received / %lu errors / %lu missed\n", p, st.ipackets, st.ierrors, st.imissed);
+  }
+
   printf("Packets processed %lu\n", packets_processed);
   printf("--------------------------------------------------------------\n\n");
 }
@@ -142,7 +151,9 @@ void rx_packets()
       for (int i = 0; i < nb_rx; i++)
       {
         packets_processed++;
+        rte_pktmbuf_free(bufs[i]);
       }
+
     }
   }
 }
@@ -157,7 +168,6 @@ void exit_stats(int sig)
 int main(int argc, char *argv[])
 {
   struct rte_mempool *membuf_pool;
-  unsigned nb_ports;
   uint16_t portid;
 
   int ret = rte_eal_init(argc, argv);
