@@ -1,6 +1,3 @@
-// gcc simple_rx.c $(pkg-config --cflags --libs --static libdpdk) -g -o simple_rx
-// ./simple_rx
-
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
