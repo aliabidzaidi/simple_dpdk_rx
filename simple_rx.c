@@ -19,6 +19,7 @@ static uint8_t nb_ports;
 static unsigned long packets_processed;
 static uint64_t timer_period = 2;
 static uint64_t timer_cycles;
+struct rte_ring *queue;
 
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
