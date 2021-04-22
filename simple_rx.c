@@ -8,17 +8,20 @@
 #include <rte_cycles.h>
 #include <rte_lcore.h>
 #include <rte_mbuf.h>
+#include <rte_ring.h>
 
 #define RX_RING_SIZE 1024
 #define TX_RING_SIZE 0
 #define MBUFS 8191
 #define MBUF_CACHE 250
+#define LCORE_QUEUESZ 1024 * 32
 #define BURST_SIZE 32
 
 static uint8_t nb_ports;
 static unsigned long packets_processed;
 static uint64_t timer_period = 2;
 static uint64_t timer_cycles;
+static volatile char is_stop = 0;
 struct rte_ring *queue;
 
 static const struct rte_eth_conf port_conf_default = {
@@ -117,7 +120,7 @@ void print_stats(void)
   printf("--------------------------------------------------------------\n\n");
 }
 
-void rx_packets()
+static int rx_packets(void)
 {
   uint16_t port;
   uint64_t diff_tsc, cur_tsc, prev_tsc, timer_tsc;
@@ -125,7 +128,7 @@ void rx_packets()
   prev_tsc = 0, timer_tsc = 0;
   printf("Core %u processing rx packets\n", rte_lcore_id());
 
-  for (;;)
+  while (!is_stop)
   {
     RTE_ETH_FOREACH_DEV(port)
     {
@@ -152,15 +155,34 @@ void rx_packets()
       for (int i = 0; i < nb_rx; i++)
       {
         packets_processed++;
+
+        // Enqueue into rte_ring
+
         rte_pktmbuf_free(bufs[i]);
       }
-
     }
+  }
+
+  printf("Stopping rx Reader\n");
+  print_stats();
+
+  return 0;
+}
+
+void process_packets(void *args)
+{
+  // process packets
+  while (!is_stop)
+  {
+    // Read packets from rte_rings
+
+    // Dequeue from rte_ring
   }
 }
 
 void exit_stats(int sig)
 {
+  is_stop = 1;
   printf("Caught signal %d\n", sig);
   printf("Total received packets: %lu\n", packets_processed);
   exit(0);
@@ -184,7 +206,23 @@ int main(int argc, char *argv[])
   nb_ports = rte_eth_dev_count_avail();
   printf("Number of ports available %d\n", nb_ports);
 
+  // pktmbuf_pool_create
   membuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", MBUFS * nb_ports, MBUF_CACHE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+  unsigned hwsize = MBUFS * nb_ports;
+  unsigned swsize = LCORE_QUEUESZ;
+  // mempool_create
+  // pktmbuf_pool = rte_mempool_create("mbuf_pool",
+  //                                   hwsize + swsize * (rte_lcore_count() - 1), MBUFSZ, 32,
+  //                                   sizeof(struct rte_pktmbuf_pool_private),
+  //                                   rte_pktmbuf_pool_init, NULL,
+  //                                   rte_pktmbuf_init, NULL, SOCKET_ID_ANY, 0);
+
+  struct rte_mempool *mempool2;
+  mempool2 = rte_mempool_create("MBUF_POOL2", swsize,
+                                sizeof(struct rte_pktmbuf_pool_private), MBUF_CACHE, RTE_MBUF_DEFAULT_BUF_SIZE,
+                                NULL, NULL, NULL, NULL,
+                                rte_socket_id(), 0);
 
   if (membuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Error in creating membuf pool");
@@ -198,7 +236,19 @@ int main(int argc, char *argv[])
   }
 
   signal(SIGINT, exit_stats);
+
+  queue = rte_ring_create("RING 1", swsize, SOCKET_ID_ANY, RING_F_SP_ENQ | RING_F_SC_DEQ);
+
+  unsigned lcoreid = 0;
+  RTE_LCORE_FOREACH_WORKER(lcoreid)
+  {
+    printf("Lcore starting remote process function\n");
+    rte_eal_remote_launch(process_packets, (void *)&lcoreid, lcoreid);
+  }
+
   rx_packets();
+
+  rte_eal_mp_wait_lcore();
 
   return 0;
 }
