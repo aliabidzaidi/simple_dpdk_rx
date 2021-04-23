@@ -11,5 +11,4 @@ gcc simple_rx.c $(pkg-config --cflags --libs --static libdpdk) -g -o simple_rx
 
 
 ## TODO
-- Add rte_ring in between rx<--->process
 - Add Throughput on Rx ports / Total bandwidth
