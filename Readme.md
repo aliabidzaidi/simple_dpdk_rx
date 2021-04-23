@@ -1,7 +1,22 @@
 # Simple Rx Using DPDK
 
-Simple rx packets on dpdk ports
-Tested on DPDK Version 20.11-rc4
+Simple rx packets on dpdk ports. Tested on DPDK Version 20.11-rc4
+## Program Structure
+Uses a rte_ring between rx_packets() and process_packets(). Process packets starts on a different lcore, whereas rx_packets operates on main thread.
+```
+                                      LCORE                    LCORE
+   ┌───────────────┐                   ┌───────┐             ┌───────────┐
+   │               │     Enqueue       │       │             │           │
+   │           Port├──────────────────►│       │             │           │
+   │               │                   │       │             │           │
+   │               │                   │ RTE   │   Dequeue   │           │
+   │ NIC           │                   │  RING │◄────────────┤ Process   │
+   │               │                   │       │             │  Packets  │
+   │               │                   │       │             │           │
+   │           Port├──────────────────►│       │             │           │
+   │               │                   │       │             │           │
+   └───────────────┘                   └───────┘             └───────────┘
+```
 
 ## To Build & Run
 ```
