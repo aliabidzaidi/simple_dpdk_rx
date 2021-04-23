@@ -14,6 +14,7 @@
 #define TX_RING_SIZE 0
 #define MBUFS 8191
 #define MBUF_CACHE 250
+#define MBUFSZ (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #define LCORE_QUEUESZ 1024 * 32
 #define BURST_SIZE 32
 
@@ -118,7 +119,7 @@ void print_stats(void)
     printf("Port #%u: %lu received / %lu errors / %lu missed\n", p, st.ipackets, st.ierrors, st.imissed);
   }
 
-  printf("Packets processed %lu\n", packets_processed);
+  printf("Rx packets: %lu \t Ring space: %u \t Packets processed %lu\n", packets_rx, free_space, packets_processed);
   printf("--------------------------------------------------------------\n\n");
 }
 
@@ -155,7 +156,7 @@ static int rx_packets(void)
 
       for (int i = 0; i < nb_rx; i++)
       {
-        packets_processed++;
+        packets_rx++;
 
         // Enqueue into rte_ring
         rte_ring_enqueue_bulk(queue, (void **)bufs, 1, &free_space);
@@ -223,29 +224,31 @@ int main(int argc, char *argv[])
   // pktmbuf_pool_create
   membuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", MBUFS * nb_ports, MBUF_CACHE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
+  // mempool_create same as probe
   unsigned hwsize = MBUFS * nb_ports;
   unsigned swsize = LCORE_QUEUESZ;
-  // mempool_create
-  // pktmbuf_pool = rte_mempool_create("mbuf_pool",
-  //                                   hwsize + swsize * (rte_lcore_count() - 1), MBUFSZ, 32,
-  //                                   sizeof(struct rte_pktmbuf_pool_private),
-  //                                   rte_pktmbuf_pool_init, NULL,
-  //                                   rte_pktmbuf_init, NULL, SOCKET_ID_ANY, 0);
-
+  
   struct rte_mempool *mempool2;
-  mempool2 = rte_mempool_create("MBUF_POOL2", swsize,
-                                sizeof(struct rte_pktmbuf_pool_private), MBUF_CACHE, RTE_MBUF_DEFAULT_BUF_SIZE,
-                                NULL, NULL, NULL, NULL,
-                                rte_socket_id(), 0);
+  mempool2 = rte_mempool_create("mbuf_pool",
+                                    hwsize + swsize , MBUFSZ, 32,
+                                    sizeof(struct rte_pktmbuf_pool_private),
+                                    rte_pktmbuf_pool_init, NULL,
+                                    rte_pktmbuf_init, NULL, rte_socket_id(), 0);
 
-  if (membuf_pool == NULL)
+  // mempool2 = rte_mempool_create("MBUF_POOL2",
+  //                               swsize, sizeof(struct rte_pktmbuf_pool_private), MBUF_CACHE, 
+  //                               RTE_MBUF_DEFAULT_BUF_SIZE,
+  //                               NULL, NULL, NULL, NULL,
+  //                               rte_socket_id(), 0);
+
+  if (mempool2 == NULL)
     rte_exit(EXIT_FAILURE, "Error in creating membuf pool");
 
   printf("Mempool created successfully\n");
 
   RTE_ETH_FOREACH_DEV(portid)
   {
-    if (port_init(portid, membuf_pool) != 0)
+    if (port_init(portid, mempool2) != 0)
       rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 " \n", portid);
   }
 
