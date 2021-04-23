@@ -18,10 +18,12 @@
 #define BURST_SIZE 32
 
 static uint8_t nb_ports;
+static unsigned long packets_rx;
 static unsigned long packets_processed;
 static uint64_t timer_period = 2;
 static uint64_t timer_cycles;
 static volatile char is_stop = 0;
+unsigned int free_space = LCORE_QUEUESZ;
 struct rte_ring *queue;
 
 static const struct rte_eth_conf port_conf_default = {
@@ -134,7 +136,6 @@ static int rx_packets(void)
     {
       struct rte_mbuf *bufs[BURST_SIZE];
       const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
-
       cur_tsc = rte_rdtsc();
       diff_tsc = cur_tsc - prev_tsc;
 
@@ -157,6 +158,7 @@ static int rx_packets(void)
         packets_processed++;
 
         // Enqueue into rte_ring
+        rte_ring_enqueue_bulk(queue, (void **)bufs, 1, &free_space);
 
         rte_pktmbuf_free(bufs[i]);
       }
@@ -169,14 +171,26 @@ static int rx_packets(void)
   return 0;
 }
 
-void process_packets(void *args)
+static int process_packets(void *args)
 {
+  unsigned lcoreid = *(unsigned *)args;
+  printf("Starting process on lcore %u\n", lcoreid);
+  struct rte_mbuf *mbuf[BURST_SIZE];
+  int nb, q;
   // process packets
   while (!is_stop)
   {
-    // Read packets from rte_rings
-
     // Dequeue from rte_ring
+    nb = rte_ring_dequeue_burst(queue, (void **)mbuf, BURST_SIZE, NULL);
+    if (unlikely(nb == 0))
+      continue;
+
+    // Read packets from mbuf
+    for (q = 0; q < nb; q++)
+    {
+      packets_processed++;
+      rte_pktmbuf_free(mbuf[q]);
+    }
   }
 }
 
