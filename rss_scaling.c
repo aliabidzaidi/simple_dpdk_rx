@@ -10,9 +10,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define RX_RING_SIZE 4096
-#define RX_QUEUES 4
-#define TX_RING_SIZE 16384
+#define RX_RING_SIZE 2048
+#define RX_QUEUES 3
+#define TX_RING_SIZE 4096
 #define MBUFS 8191
 #define MBUF_CACHE 256
 #define MBUFSZ (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
@@ -46,12 +46,13 @@ struct rte_ring *packet_ring;
 static const struct rte_eth_conf port_conf_default = {
     .rxmode =
         {
+            .mq_mode = ETH_MQ_RX_RSS,
             .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
         },
 	.rx_adv_conf = {
 		.rss_conf = {
 			.rss_key = NULL,
-			.rss_hf = ETH_RSS_IPV4 | ETH_RSS_IPV6 | ETH_RSS_TCP | ETH_RSS_UDP,
+			.rss_hf = ETH_RSS_TCP,
 		},
 	},
 };
@@ -88,6 +89,18 @@ int port_init(uint16_t port, struct rte_mempool *membuf_pool) {
 
 //   printf("Dev adjust rx-tx success [%u]\n", port);
 
+  port_conf.rx_adv_conf.rss_conf.rss_hf &=
+	  dev_info.flow_type_rss_offloads;
+  if (port_conf.rx_adv_conf.rss_conf.rss_hf !=
+		  port_conf.rx_adv_conf.rss_conf.rss_hf)
+  {
+	  printf("Port %u modified RSS hash function based on hardware support,"
+			  "requested:%#" PRIx64 " configured:%#" PRIx64 "\n",
+			  port,
+			  port_conf.rx_adv_conf.rss_conf.rss_hf,
+			  port_conf.rx_adv_conf.rss_conf.rss_hf);
+  }
+
   ret = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
   if (ret != 0) return ret;
 //   printf("rte_eth_dev_configure success [%u]\n", port);
@@ -95,7 +108,7 @@ int port_init(uint16_t port, struct rte_mempool *membuf_pool) {
   uint16_t q;
   for (q = 0; q < rx_rings; q++) {
 //   printf("Going to initialize queue %u of port %u\n", port, port);
-  ret = rte_eth_rx_queue_setup(port, 0, nb_rxd, rte_eth_dev_socket_id(port),
+  ret = rte_eth_rx_queue_setup(port, q, nb_rxd, rte_eth_dev_socket_id(port),
                                NULL, membuf_pool);
   if (ret < 0) {
     printf("Error in rx queue_setup %u error %s\n", port, strerror(-ret));
@@ -389,3 +402,4 @@ int main(int argc, char *argv[]) {
 
   return 0;
 }
+
