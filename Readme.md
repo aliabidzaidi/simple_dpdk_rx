@@ -24,6 +24,12 @@ gcc simple_rx.c $(pkg-config --cflags --libs --static libdpdk) -g -o simple_rx
 ./simple_rx
 ```
 
+## Advanced compile flags
+```
+gcc simple_rx.c $(pkg-config --cflags --libs --static libdpdk) -O0 -g -g3 -ggdb -fvar-tracking -pg -o simple_rx
+./simple_rx
+```
+
 
 ## TODO
 - Add Throughput on Rx ports / Total bandwidth
